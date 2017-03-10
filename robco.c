@@ -26,7 +26,7 @@ void disp_step(char* string){
 
 // A function that displays the welcome text
 void welcome(){
-	disp_step(ANSI_COLOR_GREEN "Welcome to ROBCO Industries (TM) TermLink\n");
+	disp_step("Welcome to ROBCO Industries (TM) TermLink\n");
 }
 
 // A function that displays the header text in terminal windows
@@ -62,9 +62,10 @@ void password(){
 
 // The main function
 int main(){
+	printf(ANSI_COLOR_GREEN); // change all terminal text to green from here on out
 	welcome();
 	password();
-	printf(ANSI_COLOR_RESET);
+	printf(ANSI_COLOR_RESET); // reset the terminal color to default before exiting, else it carries over after program termination
 	return 0;
 }
 
