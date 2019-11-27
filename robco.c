@@ -26,51 +26,50 @@ char* med_words[] = {"incubate", "download", "manual", "reagent", "material", "d
 char* hard_words[] = {"sequence", "transform", "technical", "produced", "terminal", "fantastic", "assembly", "buffered", "terminate", "pressure",
 			"potential", "different", "separate", "relentless", "waiting", "passwords", "emphatic"};
 
-// A function that prints out each char in a string one at a time
+/* Print string one char at a time */
 void disp_step(char* string){
-	int i = 0; // for iterating through the input string
-	while (string[i] != '\0'){ // keep going until you hit a terminator
+	int i;
+	for (i=0;string[i] != '\0';i++){
 		printf("%c",string[i]);
-		fflush(stdout); // Flush the buffer, else you do all your waiting and then print the whole string at once
-		usleep(20000); // Sleep in between each char
-		i++;
+		/* Pause after each char */
+		fflush(stdout);
+		usleep(20000);
 	}
-	usleep(200000); // Pause at the end of the line
+	/* Dramatic pause */
+	usleep(200000);
 }
 
-// A function that displays the welcome text
 void welcome(){
 	disp_step("Welcome to ROBCO Industries (TM) TermLink\n");
 }
 
-// A function that displays the header text in terminal windows
 void header(){
 	disp_step("ROBCO INDUSTRIES (TM) TERMLINK PROTOCOL\n");
 }
 
-// A function for choosing a random number
 int rand_num(){
-	time_t t; // for srand
-	srand((unsigned) time(&t)); // cast unsigned to the type returned by time()
-	return rand() % 0xFFFF; // return a random number between 0 and 0xFFFF	
+	time_t t;
+	srand((unsigned) time(&t));
+	/* random number between 0 and 0xFFFF */
+	return rand() % 0xFFFF;
 }
 
-// A function that chooses a random password from the presets based on the difficulty
 char* choose_password(int difficulty){
-	int i; // for getting the index of the password array
-	time_t t; // for srand
+	int i;
+	time_t t;
 	srand((unsigned) time(&t));
-	if (difficulty == 0){ // easy passwords
-		i = rand() % DICT_SIZE; // don't go higher than 17
+	if (difficulty == 0){
+		/* don't go over 17 */
+		i = rand() % DICT_SIZE;
 		return easy_words[i];
-	} else if (difficulty == 1){ // med passwords
-		i = rand() % DICT_SIZE; // don't go over!
+
+	} else if (difficulty == 1){
+		i = rand() % DICT_SIZE;
 		return med_words[i];
-	} else if (difficulty == 2){ // if hahd difficulty
+
+	} else if (difficulty == 2){
 		i = rand() % DICT_SIZE;
 		return hard_words[i];
-	} else { // if somehow, something goofed up
-		printf("Something went wrong. Please kill this process, although it will likely SegFault and get killed automatically now\n");
 	}
 }
 
@@ -79,48 +78,58 @@ char* choose_password(int difficulty){
 // Randomly choose it, and then set a flag when it's done so it doesn't get done again (pass in a pointer to the int in password())
 
 
-// A function that runs the password minigame
-// Does its own error handling
+/* Run the password minigame */
 void password(int difficulty){
-	int status = 0; // for storing whether the login was a success or not
-	int attempts = 3; // track the number of attempts remaining
-	int pass_flag; // for tracking whether or not we've printed the real password out
-	int i; // for use iterating
-	int init_hex = rand_num(); // get a random number that you'll use to initialize the lefthand columns
+	int success = 0, attempts = 3;
+	/* printed the real password yet? */
+	int i, pass_flag;
+	int init_hex = rand_num();
 	char* password = choose_password(difficulty);
+
 	header();
 	disp_step("ENTER PASSWORD NOW\n\n");
 	printf("%d", attempts);
 	disp_step(" ATTEMPTS LEFT: @ @ @\n\n");
-	for (i=0;i<17;i++){ // 17 is the number of lines the password minigame has
-		printf("0x%X\t", init_hex + i*10); // Print out the first column's hex
-		printf("\t"); // 12 chars long
-		printf("0x%X\t", init_hex + (i+17)*10); // Start with the one immediately following the last in the first column
-		printf("\n"); // 12 chars long
+	for (i=0;i<17;i++){ /* 17 is the number of lines the password minigame has */
+		/* first column's hex */
+		printf("0x%X\t", init_hex + i*10);
+		/* 12 chars long */
+		printf("\t");
+		/* Start with the one immediately following the last in the first column */
+		printf("0x%X\t", init_hex + (i+17)*10);
+		/* 12 chars long */
+		printf("\n");
 	}
 }
 
-// The main function
 int main(int argc, char* argv[]){
 	int difficulty = 0;
-	if (argc != 2){ // if the user passed in the wrong number of args, yell at them
+
+	if (argc != 2){
 		printf("Please enter the correct number of arguments!\n");
 		return 0;
 	}
+
 	if (strcmp("easy",argv[1]) == 0){ // if the user entered easy for the difficulty
 		difficulty = 0;
+
 	} else if (strcmp("med",argv[1]) == 0){ // else if the user entered med for the difficulty
 		difficulty = 1;
+
 	} else if (strcmp("hard",argv[1]) == 0){ // else if the user entered hard for the difficulty
 		difficulty = 2;
+
 	} else {
 		printf("Please enter the proper type of arguments!\n");
 		return 0;
 	}
-	printf(ANSI_COLOR_GREEN); // change all terminal text to green from here on out
+
+	printf(ANSI_COLOR_GREEN);
 	welcome();
 	password(difficulty);
-	printf(ANSI_COLOR_RESET); // reset the terminal color to default before exiting, else it carries over after program termination
+
+	printf(ANSI_COLOR_RESET);
+
 	return 0;
 }
 
