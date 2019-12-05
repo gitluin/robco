@@ -5,9 +5,6 @@ LDFLAGS=
 SRC= robco.c
 OBJ= ${SRC:.c=.o}
 
-PREFIX?= /usr
-BINDIR?= $(PREFIX)/bin
-
 all: robco
 
 .c.o:
