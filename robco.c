@@ -1,35 +1,146 @@
-/* First attempt at simulating the RobCo Terminals from Fallout */
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
 
-#define ANSI_COLOR_GREEN   "\x1b[32m"
-#define ANSI_COLOR_RESET   "\x1b[0m"
 
-#define DICT_SIZE 17
+#define ANSI_COLOR_GREEN	"\x1b[32m"
+#define ANSI_COLOR_RESET	"\x1b[0m"
 
-/* Predefine potential words here. Do this on a difficulty-based scale,
- * So we could have three separate arrays, with different words
- * Make sure each array has the same number of entries, DICT_SIZE
+#define MIN(A,B)		((A) < (B) ? (A) : (B))
+#define MAX(A,B) 		((A) > (B) ? (A) : (B))
+#define DICTSIZE		17
+#define LWIDTH			17
+
+
+/* ---------------------------------------
+ * Util Functions
+ * ---------------------------------------
  */
 
-/* Easy: 4-6 chars
+int
+minimum(int a, int b, int c){
+	return ( (a = a < b ? a : b) < c ? a : c );
+}
+
+int
+slen(const char* str){
+	int i = 0;
+
+	while (*str){ str++; i++; }
+
+	return i;
+}
+
+/* thanks to the C# .NET algorithm at programm.top */
+int
+strsim(const char* str1, const char* str2){
+	int i, j, cost;
+	int n = slen(str1) + 1, m = slen(str2) + 1;
+	int maxlen = MAX(n-1, m-1);
+	int dist[n][m];
+
+	for (i=0;i < n;i++)
+		dist[i][0] = i;
+
+	for (j=0;j < m;j++)
+		dist[0][j] = j;
+
+	for (i=1;i < n;i++){
+		for (j=1;j < m;j++){
+			cost = str1[i-1] == str2[j-1] ? 0 : 1;
+			dist[i][j] = minimum((dist[i-1][j] + 1),
+					(dist[i][j-1] + 1),
+					(dist[i-1][j-1] + cost));
+
+		if (i > 1 && j > 1 && (str1[i-1] == str2[j-2]) && (str1[i-2] == str2[j-1]))
+			dist[i][j] = MIN(dist[i][j], (dist[i-2][j-2] + cost));
+		}
+	}
+
+	return maxlen - dist[n-1][m-1];
+}
+
+
+/* ---------------------------------------
+ * Function Declarations
+ * ---------------------------------------
+ */
+
+const char* choosepwd(int diff);
+void password(int diff);
+void printstepwise(const char* str);
+int randnum();
+
+
+/* ---------------------------------------
+ * Globals
+ * ---------------------------------------
+ */
+
+/* Predefine potential words here. Do this by difficulty:
+ * Easy: 4-6 chars
  * Med:  6-8 chars
  * Hard: 8-10 chars
  */
-const char* easy_words[] = {"test", "panel", "want", "expire", "bases", "pair", "digest", "clone", "steps", "color", "beta", "water", "from", "break",
-			"shift", "space", "relic"};
+const char* ewords[DICTSIZE] = { "test", "panel", "want", "expire", "bases", "pair", "digest",
+	"clone", "steps", "color", "beta", "water", "from", "break", "shift", "space",
+	"relic" };
+const char* mwords[DICTSIZE] = { "incubate", "download", "manual", "reagent", "material",
+	"decimal", "pointer", "androids", "trainer", "special", "elated", "unique",
+	"busted", "include", "satisfy", "mystic", "entered" };
+const char* hwords[DICTSIZE] = { "sequence", "transform", "technical", "produced", "terminal",
+	"fantastic", "assembly", "buffered", "terminate", "pressure", "potential",
+	"different", "separate", "relentless", "waiting", "passwords", "emphatic" };
 
-const char* med_words[] = {"incubate", "download", "manual", "reagent", "material", "decimal", "pointer", "androids", "trainer", "special", "elated",
-			"unique", "busted", "include", "satisfy", "mystic", "entered"};
+const char** pickword[] = { ewords, mwords, hwords };
 
-const char* hard_words[] = {"sequence", "transform", "technical", "produced", "terminal", "fantastic", "assembly", "buffered", "terminate", "pressure",
-			"potential", "different", "separate", "relentless", "waiting", "passwords", "emphatic"};
+
+/* ---------------------------------------
+ * Functions
+ * ---------------------------------------
+ */
+
+const char*
+choosepwd(int diff){
+	time_t t;
+	srand((unsigned) time(&t));
+
+	return pickword[diff][rand() % DICTSIZE];
+}
+
+/* Build a random string
+ * Sample from a uniform distribution to decide what entry gets the real password
+ * Use a mixture of junk and other words
+ */
+
+/* Run the password minigame */
+void
+printpassword(int diff){
+	int i, success = 0, attempts = 3;
+	int init_hex = randnum();
+	const char* pwd = choosepwd(diff);
+
+	printstepwise("ENTER PASSWORD NOW\n\n");
+	// TODO: Redraw after failure
+	printf("%d", attempts);	printstepwise(" ATTEMPTS LEFT: @ @ @\n\n");
+	for (i=0;i < LWIDTH;i++){ /* 17 is the number of lines the password minigame has */
+		/* first column's hex */
+		printf("0x%X\t", init_hex + i*10);
+		/* 12 chars long */
+		printf("\t");
+		
+		/* Start with the one immediately following the last in the first column */
+		printf("0x%X\t", init_hex + (i+LWIDTH)*10);
+		/* 12 chars long */
+		printf("\n");
+	}
+}
 
 /* Print string one char at a time */
-void disp_step(const char* str){
+void
+printstepwise(const char* str){
 	while (*str){
 		printf("%c", *str);
 		fflush(stdout);
@@ -41,92 +152,30 @@ void disp_step(const char* str){
 	usleep(200000);
 }
 
-void welcome(){
-	disp_step("Welcome to ROBCO Industries (TM) TermLink\n");
-}
-
-void header(){
-	disp_step("ROBCO INDUSTRIES (TM) TERMLINK PROTOCOL\n");
-}
-
-int rand_num(){
+int
+randnum(){
 	time_t t;
 	srand((unsigned) time(&t));
 	/* random number between 0 and 0xFFFF */
 	return rand() % 0xFFFF;
 }
 
-const char* choose_password(int difficulty){
-	int i;
-	time_t t;
-	srand((unsigned) time(&t));
-	i = rand() % DICT_SIZE;
-	switch(difficulty){
-	case 0:
-		return easy_words[i];
-	case 1:
-		return med_words[i];
-	case 2:
-		return hard_words[i];
-	default:
-		break;
-	}
-}
-
-/* A function for building a random string, sometimes incorporating a password from the proper difficulty
- * At some point, you need to incorporate the correct password
- * Randomly choose it, and then set a flag when it's done so it doesn't get done again (pass in a pointer to the int in password())
- */
-
-/* Run the password minigame */
-void password(int difficulty){
-	int i, success = 0, attempts = 3;
-	/* printed the real password yet? */
-	int pass_flag;
-	int init_hex = rand_num();
-	const char* password = choose_password(difficulty);
-
-	header();
-	disp_step("ENTER PASSWORD NOW\n\n");
-	printf("%d", attempts);	disp_step(" ATTEMPTS LEFT: @ @ @\n\n");
-	for (i=0;i<17;i++){ /* 17 is the number of lines the password minigame has */
-		/* first column's hex */
-		printf("0x%X\t", init_hex + i*10);
-		/* 12 chars long */
-		printf("\t");
-		
-		/* Start with the one immediately following the last in the first column */
-		printf("0x%X\t", init_hex + (i+17)*10);
-		/* 12 chars long */
-		printf("\n");
-	}
-}
-
-int main(int argc, char* argv[]){
-	int difficulty = 0;
+int
+main(int argc, char* argv[]){
+	int diff;
 
 	if (argc != 2){
 		printf("Please enter the correct number of arguments!\n");
 		return 0;
 	}
 
-	if (strcmp("easy",argv[1]) == 0){
-		difficulty = 0;
-
-	} else if (strcmp("med",argv[1]) == 0){
-		difficulty = 1;
-
-	} else if (strcmp("hard",argv[1]) == 0){
-		difficulty = 2;
-
-	} else {
-		printf("Please enter the proper type of arguments!\n");
-		return 0;
-	}
+	diff = atoi(argv[1]);
 
 	printf(ANSI_COLOR_GREEN);
-	welcome();
-	password(difficulty);
+
+	printstepwise("Welcome to ROBCO Industries (TM) TermLink\n");
+	printstepwise("ROBCO INDUSTRIES (TM) TERMLINK PROTOCOL\n");
+	printpassword(diff);
 
 	printf(ANSI_COLOR_RESET);
 
