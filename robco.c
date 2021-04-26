@@ -14,6 +14,9 @@
 #define LWIDTH			17
 
 
+enum { NO_PAUSE,     YES_PAUSE };
+
+
 /* ---------------------------------------
  * Util Functions
  * ---------------------------------------
@@ -70,7 +73,7 @@ strsim(const char* str1, const char* str2){
 
 const char* choosepwd(int diff);
 void password(int diff);
-void printstepwise(const char* str);
+void printstepwise(const char* str, int do_pause);
 int randnum();
 
 
@@ -118,13 +121,26 @@ choosepwd(int diff){
 /* Run the password minigame */
 void
 printpassword(int diff){
-	int i, success = 0, attempts = 3;
+	int i, success = 0, attempts = 3, x_pos = 0, y_pos = 0;
+	char* buf[2];
 	int init_hex = randnum();
 	const char* pwd = choosepwd(diff);
 
-	printstepwise("ENTER PASSWORD NOW\n\n");
+	printstepwise("ENTER PASSWORD NOW\n\n", YES_PAUSE);
 	// TODO: Redraw after failure
-	printf("%d", attempts);	printstepwise(" ATTEMPTS LEFT: @ @ @\n\n");
+	printf("%d", attempts);
+
+	printstepwise(" ATTEMPTS LEFT:", NO_PAUSE);
+	for (i=0;i < attempts;i++)
+		printstepwise(" @", NO_PAUSE);
+
+	printstepwise("\n\n", YES_PAUSE);
+
+	// TODO: store text inside a matrix
+	// 	cursor position is just [i,j] coordinates
+	// 	matrix of chars or matrix of strings? how does password minigame handle cursor?
+
+	// TODO: random, not increasing
 	for (i=0;i < LWIDTH;i++){ /* 17 is the number of lines the password minigame has */
 		/* first column's hex */
 		printf("0x%X\t", init_hex + i*10);
@@ -136,11 +152,39 @@ printpassword(int diff){
 		/* 12 chars long */
 		printf("\n");
 	}
+
+	// TODO:
+	// event loop
+	// 	read user input, moving "cursor" around
+	// 		draw cursor
+	// 			skip over whitespace
+	// 		track cursor position
+	// 	if cursor overlaps with a "word", and "enter" is pressed, guess that word
+	// 		a "word" is whitespace delimited (strtok)
+	// 	if guess correct, return 1
+	// 	allow "cheating" by escaping out like in the game
+
+	while (fgets(buf, sizeof(buf), stdin) && attempts > 0){
+		switch(buf){
+		case 'h': 	move_x(&x_pos, -1); break;
+		case 'j': 	move_y(&y_pos, +1); break;
+		case 'k': 	move_y(&y_pos, -1); break;
+		case 'l': 	move_x(&x_pos, +1); break;
+		case '\n':	failed = checkans(*x_pos, *y_pos, board); break;
+		}
+
+		// TODO: what if success?
+		if (failed)
+			attempts--;
+		else
+			break;
+	}
+
 }
 
 /* Print string one char at a time */
 void
-printstepwise(const char* str){
+printstepwise(const char* str, int do_pause){
 	while (*str){
 		printf("%c", *str);
 		fflush(stdout);
@@ -148,8 +192,10 @@ printstepwise(const char* str){
 		usleep(20000);
 		str++;
 	}
+
 	/* Dramatic pause */
-	usleep(200000);
+	if (do_pause)
+		usleep(200000);
 }
 
 int
@@ -160,12 +206,23 @@ randnum(){
 	return rand() % 0xFFFF;
 }
 
+void
+usage(){
+	printf("Usage: robco [difficulty]\n");
+	printf("Password-guessing minigame from the Fallout series.\n");
+	printf("\n");
+	printf("Difficulties:\n");
+	printf("  1 - Easy\n");
+	printf("  2 - Medium\n");
+	printf("  3 - Hard\n");
+}
+
 int
 main(int argc, char* argv[]){
 	int diff;
 
 	if (argc != 2){
-		printf("Please enter the correct number of arguments!\n");
+		usage();
 		return 0;
 	}
 
@@ -173,8 +230,8 @@ main(int argc, char* argv[]){
 
 	printf(ANSI_COLOR_GREEN);
 
-	printstepwise("Welcome to ROBCO Industries (TM) TermLink\n");
-	printstepwise("ROBCO INDUSTRIES (TM) TERMLINK PROTOCOL\n");
+	printstepwise("Welcome to ROBCO Industries (TM) TermLink\n", YES_PAUSE);
+	printstepwise("ROBCO INDUSTRIES (TM) TERMLINK PROTOCOL\n", YES_PAUSE);
 	printpassword(diff);
 
 	printf(ANSI_COLOR_RESET);

@@ -16,4 +16,4 @@ robco: ${OBJ}
 	${CC} ${LDFLAGS} -o $@ ${OBJ} ${LDADD}
 
 clean:
-	rm -f *.o
+	rm -f *.o robco
