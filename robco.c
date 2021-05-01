@@ -25,10 +25,17 @@ enum { NO_PAUSE,     YES_PAUSE };
 
 
 typedef struct node node;
+typedef struct gameword gameword;
 
 struct node {
 	char str[TEXTLEN];
 	node* next;
+};
+
+struct gameword {
+	char str[TEXTLEN];
+	int start;
+	gameword* next;
 };
 
 
@@ -61,8 +68,6 @@ minimum(int a, int b, int c){
 
 int
 randnum(unsigned int upper){
-	time_t t;
-	srand((unsigned) time(&t));
 	/* random number between 0 and 0xFFFF */
 	return rand() % upper;
 }
@@ -122,7 +127,7 @@ void printheader(const char* header, int attempts);
 void printpassword(int diff);
 void printstepwise(const char* str, int do_pause);
 void push_sidebar(const char* str, node** head);
-void remove_dud(int index, char** game_board);
+void remove_dud(int index, int delim_index, char** subset, int subset_start, int subset_len, char** game_board);
 void usage();
 
 
@@ -221,6 +226,55 @@ choosepwd(int diff){
 }
 
 
+int
+find_delim(int index, char* game_board){
+	int i;
+	char tmp;
+	char sdelim = game_board[index];
+	char edelim = '0';
+	int switched = 0;
+	char* sdelims = "({[<";
+	char* edelims = ")}]>";
+
+	for (i=0;i < slen(sdelims);i++){
+		if (sdelim == sdelims[i]){
+			edelim = edelims[i];
+
+			break;
+		}
+	}
+
+	for (i=0;i < slen(edelims);i++){
+		if (sdelim == edelims[i]){
+			edelim = edelims[i];
+
+			/* Proper alignment */
+			tmp = sdelim;
+			sdelim = edelim;
+			edelim = tmp;
+			switched = 1;
+
+			break;
+		}
+	}
+
+	if (edelim == '0')
+		return -1;
+
+	if (!switched){
+		for (i=index;i < BOARDLEN;i++)
+			if (game_board[i] == edelim)
+				return i;
+
+	} else {
+		for (i=index;i > 0;i--)
+			if (game_board[i] == sdelim)
+				return i;
+
+	}
+}
+
+
 // TODO: new game_board
 char*
 find_word(int index, char** subset, int* subset_start, int subset_len){
@@ -264,6 +318,7 @@ overlaps(int index, const char* to_add, char** subset, int* subset_start, int su
 }
 
 
+// TODO: draw pointer
 void
 print_board(char* game_board, node* lhead, node* chead, node* rhead){
 	int i, j, col1_idx, col2_idx;
@@ -334,12 +389,11 @@ printpassword(int diff){
 	int i, j, rn, res;
 	char tmpstr[TEXTLEN];
 	char* pwd = choosepwd(diff);
-	int attempts = 3, ptr = 0;
+	int attempts = 3, ptr = 0, duds = 0, delim_index = -1, allow_replenish = 1;
 	int init_hex = randnum(0xFFFF);
 	int maxjunk = slen(junk_chars);
-	int subset_len = num_words[diff];
-	int subset_start[subset_len];
-	char** subset = ecalloc(subset_len, TEXTLEN*sizeof(char));
+	gameword* subset = ecalloc(num_words[diff], sizeof(node));
+	gameword* cursub;
 
 	// TODO: alternative to game_board:
 	// 	a single string that is TEXTLEN * 2 * BOARDROWS long
@@ -370,17 +424,15 @@ printpassword(int diff){
 
 	/* shuffle subset */
 
-	for (i=0;i < subset_len;i++){
-		// TODO: what if you can't find a spot?
+	for (cursub=subset;cursub && cursub->next;cursub=cursub->next){
 		rn = randnum(BOARDLEN);
-		while (overlaps(rn, subset[i], subset, subset_start, subset_len)){
+
+		// TODO: what if you can't find a spot?
+		while (overlaps(rn, cursub))
 			rn = randnum(BOARDLEN);
-		}
-		
-		/* copy char-by-char */
-		for (j=0;j < slen(subset[i]);j++,rn++){
-			game_board[rn] = subset[i][j];
-		}
+
+		for (j=0;j < slen(cursub->str);j++,rn++)
+			game_board[rn] = cursub->str[j];
 	}
 
 	printheader("ENTER PASSWORD NOW\n\n", attempts);
@@ -399,7 +451,6 @@ printpassword(int diff){
 	// TODO:
 	// event loop
 	// 	read user input, moving "cursor" around
-	// 		draw cursor
 	// 		highlight word/delim range under cursor
 	//
 	// TODO: "Up,Down,Left,Right is known as extended key and to detect
@@ -425,13 +476,6 @@ printpassword(int diff){
 		case '\n':
 			chosen = find_word(ptr, subset, subset_start, subset_len);
 			
-			// TODO:
-			// If ptr is on a delimiter (), {}, [], <>, then pick
-			// 	a random non-password subset member to remove
-			// 	from game_board, and replace it with '.....'
-			// Correct dud selection does not reduce attempts
-			// 3 correct dud selections resets attempts
-
 			res = checkans(chosen, pwd);
 			if (res >= 0){
 				snprintf(tmpstr, TEXTLEN, "%s", chosen);
@@ -452,8 +496,23 @@ printpassword(int diff){
 				}
 
 			} else {
-				push_sidebar("Dud removed.", &rhead);
-				remove_dud(ptr, (char**) &game_board);
+				if ( (delim_index = find_delim(ptr, game_board)) > 0 ){
+					push_sidebar("Dud removed.", &rhead);
+					remove_dud(ptr, delim_index, subset, subset_start, subset_len, (char**) &game_board);
+
+					duds++;
+
+					if (duds == 3 && allow_replenish){
+						attempts = 4;
+						push_sidebar("Allowance", &rhead);
+						push_sidebar("replenished.", &rhead);
+						allow_replenish = 0;
+					}
+
+				} else {
+					attempts--;
+					push_sidebar("Entry denied", &rhead);
+				}
 			}
 
 			break;
@@ -500,9 +559,18 @@ push_sidebar(const char* str, node** head){
 }
 
 
+// TODO:
+// remove a random subset word
+// add delim indices to an array of already used indices
 void
-remove_dud(int index, char** game_board){
-	*game_board[index] = '.';
+remove_dud(int index, int delim_index, char** subset, int subset_start, int subset_len, char** game_board){
+	int i;
+	int to_remove = randnum(subset_len);
+
+	for (i=subset_start[to_remove];i < slen(subset[to_remove]);i++)
+		*game_board[i] = '.';
+
+	// TODO: pop to_remove from all
 }
 
 
@@ -520,11 +588,15 @@ usage(){
 int
 main(int argc, char* argv[]){
 	int diff;
+	struct timeval t;
 
 	if (argc != 2){
 		usage();
 		return 0;
 	}
+	
+	gettimeofday(&t, NULL);
+	srand((unsigned) (t.tv_usec * t.tv_sec));
 
 	diff = atoi(argv[1]);
 
