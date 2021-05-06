@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
+#include <math.h>
 
 
 #define ANSI_COLOR_GREEN		"\x1b[32m"
@@ -19,6 +20,20 @@
 #define BOARDLEN			TEXTLEN * 2 * BOARDROWS
 /* words cannot be closer than 2 characters when in game_board */
 #define PADDING				2
+
+
+/* Structure:
+ * 	game_board is a single string that is TEXTLEN * 2 * BOARDROWS long
+ * 	the printf loop iterates character-by-character
+ * 	game_board is separate from the hex-based row indices
+ * 	track absolute position in string
+ * 		y position is which BOARDROWS bin absolute is in
+ * 		x position is which TEXTLEN bin absolute is in
+ * 			(adjusted for the two columns)
+ * 		word choice, cursor position can be done based on
+ * 			absolute position
+ * 		(x,y) is just for moving the cursor
+ */
 
 
 enum { NO_PAUSE,     YES_PAUSE };
@@ -117,15 +132,20 @@ strsim(const char* str1, const char* str2){
  */
 
 void attach(node* c, node** head);
+void attachg(gameword* c, gameword** head);
 int checkans(char* chosen, char* answer);
 char* choosepwd(int diff);
-char* find_word(int index, char** subset, int* subset_start, int subset_len);
+void cleanup();
+gameword* find_word(int index, char** subset, int* subset_start, int subset_len);
 void move_ptr(int* ptr, char coord, int dir);
-int overlaps(int index, const char* to_add, char** subset, int* subset_start, int subset_len);
-void print_board(char* game_board, node* lhead, node* chead, node* rhead);
+int overlaps(int index, const char* to_add, gameword* subset);
+void popg(gameword* g, gameword** head);
+void print_board(int ptr, char* game_board, node* lhead, node* chead, node* rhead);
 void printheader(const char* header, int attempts);
 void printpassword(int diff);
 void printstepwise(const char* str, int do_pause);
+int ptr_col(int ptr);
+int ptr_row(int ptr);
 void push_sidebar(const char* str, node** head);
 void remove_dud(int index, int delim_index, char** subset, int subset_start, int subset_len, char** game_board);
 void usage();
@@ -203,6 +223,22 @@ attach(node* c, node** head){
 }
 
 
+void
+attachg(gameword* c, gameword** head){
+	int i;
+	node* current;
+
+	if (!*head){
+		*head = c;
+		return;
+	}
+
+	for (current=*head;current->next;current=current->next);
+
+	current->next = c;
+}
+
+
 /* Returns the number correct */
 int
 checkans(char* chosen, char* answer){
@@ -223,6 +259,25 @@ choosepwd(int diff){
 	srand((unsigned) time(&t));
 
 	return pickword[diff][rand() % DICTSIZE];
+}
+
+
+void
+cleanup(){
+	node* current, * tmp;
+
+	node* heads[3] = { lhead, chead, rhead };
+
+	for (i=0;i < 3;i ++){
+		current = heads[i];
+
+		while (current){
+			tmp = current;
+			current = current->next;
+
+			free(tmp);
+		}
+	}
 }
 
 
@@ -275,41 +330,58 @@ find_delim(int index, char* game_board){
 }
 
 
-// TODO: new game_board
-char*
-find_word(int index, char** subset, int* subset_start, int subset_len){
+gameword*
+find_word(int index, gameword* subset){
 	int i, subset_end;
+	gameword* current = subset;
 
-	for (i=0;i < subset_len;i++){
-		subset_end = subset_start[i] + slen(subset[i]);
+	while (current){
+		subset_end = current->start + slen(current->str);
 
-		if (subset_start[i] <= index || index <= subset_end)
-			return subset[i];
+		if (current->start <= index && index <= subset_end)
+			return current;
+
+		current = current->next;
 	}
 
 	return NULL;
 }
 
 
-// TODO: if out of bounds, don't move
 void
 move_ptr(int* ptr, char coord, int dir){
+	switch(coord){
+	case 'x':
+		if ((*ptr % (dir > 0 ? TEXTLEN - 1 : TEXTLEN)) == 0)
+			return;
 
+		*ptr += dir;
+		break;
+	case 'y':
+		if ( (ptr_row(*ptr) == 0 && dir < 0) || (ptr_row(*ptr) == BOARDROWS && dir > 0) )
+			return;
+
+		*ptr += dir * TEXTLEN;
+		break;
+	}
 }
 
 
 int
-overlaps(int index, const char* to_add, char** subset, int* subset_start, int subset_len){
-	int i, subset_end, end_point;
-	for (i=0;i < subset_len;i++){
-		subset_end = subset_start[i] + slen(subset[i]);
+overlaps(int index, const char* to_add, gameword* subset){
+	int subset_end, end_point;
+	gameword* current = subset;
+
+	while (current){
+		// TODO: what if current->start has not been set yet?
+		subset_end = current->start + slen(current->str);
 		end_point = index + slen(to_add);
 
 		/* if endpoint is not smaller than the starting point,
 		 * or if the starting point is not bigger than the ending
 		 * point, we overlap with this string
 		 */
-		if ( !(end_point == MIN(end_point, subset_start[i] - PADDING)) ||
+		if ( !(end_point == MIN(end_point, current->start - PADDING)) ||
 		(index == MAX(index, subset_end + PADDING)) )
 			return 1;
 	}
@@ -318,9 +390,24 @@ overlaps(int index, const char* to_add, char** subset, int* subset_start, int su
 }
 
 
-// TODO: draw pointer
+// TODO: Linus pointers
 void
-print_board(char* game_board, node* lhead, node* chead, node* rhead){
+popg(gameword* g, gameword** head){
+	gameword* tmp, * current = *head;
+
+	while (current){
+		if (current == g){
+
+			return;
+		}
+
+		current = current->next;
+	}
+}
+
+
+void
+print_board(int ptr, char* game_board, node* lhead, node* chead, node* rhead){
 	int i, j, col1_idx, col2_idx;
 	node* lcurrent = lhead;
 	node* ccurrent = chead;
@@ -345,8 +432,14 @@ print_board(char* game_board, node* lhead, node* chead, node* rhead){
 			ccurrent = ccurrent->next;
 		}
 
-		for (j=col2_idx;j < col2_idx + TEXTLEN;j++)
-			printf("%c", game_board[j]);
+		for (j=col2_idx;j < col2_idx + TEXTLEN;j++){
+			// TODO: extended ASCII is non-standard
+			if (ptr_row(ptr) == i && ptr_col(ptr) == j)
+				printf("%c", 219);
+			else
+				printf("%c", game_board[j]);
+
+		}
 
 		printf(" ");
 
@@ -385,45 +478,40 @@ printheader(const char* header, int attempts){
 void
 printpassword(int diff){
 	char buf;
-	char* chosen;
 	int i, j, rn, res;
+	gameword* cursub;
 	char tmpstr[TEXTLEN];
 	char* pwd = choosepwd(diff);
 	int attempts = 3, ptr = 0, duds = 0, delim_index = -1, allow_replenish = 1;
 	int init_hex = randnum(0xFFFF);
 	int maxjunk = slen(junk_chars);
-	gameword* subset = ecalloc(num_words[diff], sizeof(node));
-	gameword* cursub;
-
-	// TODO: alternative to game_board:
-	// 	a single string that is TEXTLEN * 2 * BOARDROWS long
-	// 	the printf loop iterates character-by-character
-	// 	game_board is separate from the hex-based row indices
-	// 	track absolute position in string
-	// 		y position is which BOARDROWS bin absolute is in
-	// 		x position is which TEXTLEN bin absolute is in
-	// 			(adjusted for the two columns)
-	// 		word choice, cursor position can be done based on
-	// 			absolute position
-	// 		(x,y) is just for moving the cursor
-	//
-	// TODO:
-	// 	2. select a subset of the diff words
-	// 		a. more words with higher difficulty: 8/10/12 for E/M/H
-	// 	3. randomly choose one as the real password
-	// 	4. shuffle subset
+	gameword* subset, * chosen = NULL;
 	
 	for (i=0;i < BOARDLEN;i++){
 		rn = randnum(maxjunk);
 		game_board[i] = junk_chars[rn];
 	}
 
+	// TODO:
 	/* select a subset of words */
+	for (i=0;i < num_words[diff];i++){
+		// TODO: don't pick duplicates, so rn is always increasing
+		rn = ;
 
+		gword = ecalloc(1, sizeof(gameword));
+		gword->str = pickword[diff][rn];
+
+		attachg(gword, &subset);
+	}
+
+	// TODO: get pwd_idx-rd gameword->str
 	/* select a password from subset */
+	pwd_idx = randnum(num_words[diff]);
 
+	// TODO:
 	/* shuffle subset */
 
+	/* insert words into game board */
 	for (cursub=subset;cursub && cursub->next;cursub=cursub->next){
 		rn = randnum(BOARDLEN);
 
@@ -437,8 +525,6 @@ printpassword(int diff){
 
 	printheader("ENTER PASSWORD NOW\n\n", attempts);
 
-	// TODO: left, center, and right sidebars
-
 	/* populate hex nodes */
 	for (i=0;i < BOARDROWS;i++){
 		snprintf(tmpstr, HEXLEN, "0x%X", init_hex + i*10);
@@ -449,9 +535,7 @@ printpassword(int diff){
 	}
 
 	// TODO:
-	// event loop
-	// 	read user input, moving "cursor" around
-	// 		highlight word/delim range under cursor
+	// 	highlight word/delim range under cursor
 	//
 	// TODO: "Up,Down,Left,Right is known as extended key and to detect
 	// 	them you have to read Two Char first one is Null and the second
@@ -474,11 +558,11 @@ printpassword(int diff){
 			move_ptr(&ptr, 'x', +1);
 			break;
 		case '\n':
-			chosen = find_word(ptr, subset, subset_start, subset_len);
+			chosen = find_word(ptr, subset);
 			
-			res = checkans(chosen, pwd);
+			res = checkans(chosen->str, pwd);
 			if (res >= 0){
-				snprintf(tmpstr, TEXTLEN, "%s", chosen);
+				snprintf(tmpstr, TEXTLEN, "%s", chosen->str);
 				push_sidebar(tmpstr, &rhead);
 
 				/* not quite! */
@@ -527,7 +611,7 @@ printpassword(int diff){
 		if (attempts == 1)
 			printheader("!!! WARNING: LOCKOUT IMMINENT !!!\n\n", attempts);
 
-		print_board(game_board, lhead, chead, rhead);
+		print_board(*ptr, game_board, lhead, chead, rhead);
 	}
 
 }
@@ -550,6 +634,18 @@ printstepwise(const char* str, int do_pause){
 }
 
 
+int
+ptr_col(int ptr){
+	return (ptr % TEXTLEN);
+}
+
+
+int
+ptr_row(int ptr){
+	return (floor(ptr / BOARDROWS));
+}
+
+
 void
 push_sidebar(const char* str, node** head){
 	node* cnode = ecalloc(1, sizeof(node));
@@ -559,18 +655,25 @@ push_sidebar(const char* str, node** head){
 }
 
 
-// TODO:
-// remove a random subset word
-// add delim indices to an array of already used indices
+// TODO: add delim indices to an array of already used indices
 void
-remove_dud(int index, int delim_index, char** subset, int subset_start, int subset_len, char** game_board){
+remove_dud(int index, int delim_index, gameword** subset, char** game_board){
 	int i;
-	int to_remove = randnum(subset_len);
+	int to_remove = randnum(num_words[diff]);
+	gameword* current, * target;
 
-	for (i=subset_start[to_remove];i < slen(subset[to_remove]);i++)
+	/* find subset */
+	for (i=0,current=*subset;current && current->next;current=current->next,i++){
+		if (i == to_remove){
+			target = current;
+			break;
+		}
+	}
+
+	for (i=target->start;i < slen(target->str);i++)
 		*game_board[i] = '.';
 
-	// TODO: pop to_remove from all
+	popg(target, subset);
 }
 
 
@@ -585,6 +688,8 @@ usage(){
 	printf("  3 - Hard\n");
 }
 
+
+// TODO: sighandler, need to execute cleanup()
 int
 main(int argc, char* argv[]){
 	int diff;
@@ -607,6 +712,8 @@ main(int argc, char* argv[]){
 	printpassword(diff);
 
 	printf(ANSI_COLOR_RESET);
+
+	cleanup();
 
 	return 0;
 }
